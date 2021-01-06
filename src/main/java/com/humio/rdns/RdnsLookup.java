@@ -35,6 +35,10 @@ import java.util.jar.Manifest;
     description = "Does reverse DNS queries against a range of IP addresses and uploads the results " +
             "to a Humio cluster as a lookup file",
     footer = "\n" +
+            "If \"--token\" is not set, then the \"HUMIO_TOKEN\" environment variable\n" +
+            "is used as API token. If that is also not set, then no API token is included\n" +
+            "in the request.\n" +
+            "\n" +
             "Ranges can either be specified either as\n" +
             " - a single address, i.e. \"192.168.0.1\"\n" +
             " - CIDR notation, i.e. \"192.168.0.0/24\".\n" +
@@ -46,16 +50,17 @@ import java.util.jar.Manifest;
             "\n" +
             "Example:\n" +
             "\n" +
-            "Do RDNS queries against 192.158.0.0 to 192.158.0.255 (inclusive) and any ranges\n" +
-            "found in the \"ranges.txt\" file, and upload the results to a file called\n" +
-            "\"rdns.csv\" in the repo called \"myRepo\" on the EU Humio cloud:\n" +
+            "Do RDNS queries against the CIDR subnet 192.158.0.0/24 (192.158.0.0 to\n" +
+            "192.158.0.255 inclusive) and upload the results to a file called \"rdns.csv\"\n" +
+            "in the repo called \"myRepo\" on the EU Humio cloud:\n" +
             "\n" +
-            "  rdns-lookup https://cloud.humio.com myRepo rdns.csv 192.168.0.0/24 @ranges.txt\n" +
-            "    --pass L87v9i4J5S6S4i7xsGlw")
+            "  java -jar rdns-lookup.jar https://cloud.humio.com myRepo rdns.csv 192.168.0.0/24")
 public class RdnsLookup implements Callable<Integer> {
     public static void main(String[] args) {
         System.exit(new CommandLine(new RdnsLookup()).execute(args));
     }
+
+    public static String TOKEN_ENV_VAR = "HUMIO_TOKEN";
 
     @Parameters(index = "0", description = "URL to Humio cluster to upload to")
     private URI url;
@@ -69,11 +74,8 @@ public class RdnsLookup implements Callable<Integer> {
     @Parameters(index = "3..*", description = "The IP ranges for which to perform reverse DNS", arity = "1..*")
     private String[] ranges;
 
-    @Option(names = {"-u", "--user"}, description = "Username to use when authenticating")
-    private String username;
-
-    @Option(names = {"-p", "--pass"}, description = "Password to use when authenticating (or token)", arity = "0..1", interactive = true)
-    private String password;
+    @Option(names = {"-t", "--token"}, description = "API token to use", arity = "0..1", interactive = true)
+    private String token;
 
     @SuppressWarnings("unused")
     @Option(names = {"-V", "--version"}, versionHelp = true, description = "Display version info")
@@ -87,11 +89,6 @@ public class RdnsLookup implements Callable<Integer> {
     public Integer call() throws Exception {
         if (!filename.endsWith(".csv")) {
             System.err.println("Filename must end with .csv");
-            return -1;
-        }
-
-        if (username != null && password == null) {
-            System.err.println("Password must be set if username is set");
             return -1;
         }
 
@@ -147,9 +144,16 @@ public class RdnsLookup implements Callable<Integer> {
             URI resolve = urlWithSlash.resolve("api/v1/repositories/" + repo + "/files");
             HttpPost request = new HttpPost(resolve);
 
-            if (password != null) {
-                String user = username == null ? "rdns" : username;
-                request.setHeader(HttpHeaders.AUTHORIZATION, Utils.basicAuthHeader(user, password));
+            String authToken;
+
+            if (token != null) {
+                authToken = token;
+            } else {
+                authToken = getenv(TOKEN_ENV_VAR);
+            }
+
+            if (authToken != null) {
+                request.setHeader(HttpHeaders.AUTHORIZATION, Utils.basicAuthHeader("rdns-lookup", authToken));
             }
 
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
@@ -170,6 +174,10 @@ public class RdnsLookup implements Callable<Integer> {
 
     protected String getCanonicalHostName(InetAddress address) {
         return address.getCanonicalHostName();
+    }
+
+    protected String getenv(String name) {
+        return System.getenv(name);
     }
 
     /** Version provider that reads the version added by maven in the manifest */

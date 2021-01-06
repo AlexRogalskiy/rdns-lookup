@@ -59,6 +59,15 @@ public class EndToEndTest {
 
     @Test
     public void auth() throws IOException {
+        authTest(false);
+    }
+
+    @Test
+    public void authEnv() throws IOException {
+        authTest(true);
+    }
+
+    private void authTest(boolean useEnvironment) throws IOException {
         //noinspection rawtypes
         GenericContainer humio = new GenericContainer(HUMIO_IMAGE)
                 .withEnv("AUTHENTICATION_METHOD", "single-user")
@@ -70,18 +79,32 @@ public class EndToEndTest {
         File adminTokenFile = Files.createTempFile("rdns", "e2e").toFile();
         adminTokenFile.deleteOnExit();
         humio.copyFileFromContainer("/data/humio-data/local-admin-token.txt", adminTokenFile.getPath());
-        String token = Files.readAllLines(adminTokenFile.toPath()).get(0);
+        String apiToken = Files.readAllLines(adminTokenFile.toPath()).get(0);
 
         Integer humioPort = humio.getMappedPort(8080);
 
-        int returnCode = new CommandLine(new StaticRdnsLookup())
-                .execute("http://localhost:" + humioPort, "sandbox", "rdns.csv", "1.1.1.1", "-p", token);
+        StaticRdnsLookup lookup;
+        String[] args;
 
-        assertEquals(0, returnCode);
+        if (useEnvironment) {
+            lookup = new StaticRdnsLookup() {
+                @Override
+                protected String getenv(String name) {
+                    assertEquals(TOKEN_ENV_VAR, name);
+                    return apiToken;
+                }
+            };
+            args = new String[] { "http://localhost:" + humioPort, "sandbox", "rdns.csv", "1.1.1.1" };
+        } else {
+            lookup = new StaticRdnsLookup();
+            args = new String[] { "http://localhost:" + humioPort, "sandbox", "rdns.csv", "1.1.1.1", "-t", apiToken };
+        }
+
+        assertEquals(0, new CommandLine(lookup).execute(args));
 
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpGet request = new HttpGet("http://localhost:" + humioPort + "/api/v1/repositories/sandbox/files/rdns.csv");
-            request.setHeader(HttpHeaders.AUTHORIZATION, Utils.basicAuthHeader("root", token));
+            request.setHeader(HttpHeaders.AUTHORIZATION, Utils.basicAuthHeader("root", apiToken));
             try (CloseableHttpResponse response = httpClient.execute(request)) {
                 assertEquals(200, response.getStatusLine().getStatusCode());
                 assertEquals("ip,hostname\r\n1.1.1.1,one.one.one.one\r\n", EntityUtils.toString(response.getEntity()));
@@ -98,6 +121,11 @@ public class EndToEndTest {
             } catch (UnknownHostException e) {
                 return fail(e);
             }
+        }
+
+        @Override
+        protected String getenv(String name) {
+            return null;
         }
     }
 }
