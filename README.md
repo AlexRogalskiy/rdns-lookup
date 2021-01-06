@@ -46,7 +46,7 @@ Both IPv4 and IPv6 addresses are supported.
 Example
 -------
 
-Do RDNS queries against 192.158.0.0 to 192.158.0.255 (inclusive) and upload the results to a file
-called `rdns.csv` in the repo called `myRepo` on the EU Humio cloud:
+Do RDNS queries against CIDR subnet 192.158.0.0/24 (192.158.0.0 to 192.158.0.255 inclusive) and
+upload the results to a file called `rdns.csv` in the repo called `myRepo` on the EU Humio cloud:
 
 `java -jar rdns-lookup.jar https://cloud.humio.com myRepo rdns.csv 192.168.0.0/24`
