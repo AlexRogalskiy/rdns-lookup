@@ -66,7 +66,7 @@ public class RdnsLookup implements Callable<Integer> {
     @Parameters(index = "2", description = "The filename in the repository to upload to")
     private String filename;
 
-    @Parameters(index = "3..*", description = "The IP ranges for which to perform reverse DNS")
+    @Parameters(index = "3..*", description = "The IP ranges for which to perform reverse DNS", arity = "1..*")
     private String[] ranges;
 
     @Option(names = {"-u", "--user"}, description = "Username to use when authenticating")
